@@ -1,0 +1,27 @@
+services:
+  # ── AI Inference Service (unprotected baseline) ──────────────────────────────
+  # The security layer is now Azure APIM (Consumption tier).
+  # This container is exposed on :8001 for direct-access baseline measurements.
+  # In the Azure deployment, it runs inside Container Apps (internal ingress only)
+  # and is unreachable from the internet — only APIM can reach it.
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: ai-service
+    ports:
+      - "8001:8001"
+    environment:
+      DB_PATH: /app/logs/ai_service.db
+    volumes:
+      - ai-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  ai-logs:

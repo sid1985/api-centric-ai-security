@@ -1,0 +1,101 @@
+name: Run Security Experiment
+
+on:
+  workflow_dispatch:          # manual trigger from GitHub UI
+  push:
+    branches: [main]
+    paths:
+      - 'attack-simulator/**'
+      - 'analysis/**'
+      - 'ai-service/**'
+      - '.github/workflows/run-experiment.yml'
+
+permissions:
+  contents: write             # needed to commit results back
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest    # Docker + Python pre-installed
+
+    env:
+      GATEWAY_URL: ${{ vars.APIM_GATEWAY_URL }}
+      APIM_KEY:    ${{ secrets.APIM_KEY }}
+      DIRECT_AI_URL: http://localhost:8001
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Python setup ────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -q httpx matplotlib numpy pandas scikit-learn joblib
+
+      # ── 3. Build & start AI Service container ─────────────────────────────
+      - name: Build AI Service
+        run: docker compose build ai-service
+
+      - name: Start AI Service
+        run: docker compose up -d ai-service
+
+      # ── 4. Wait for health ─────────────────────────────────────────────────
+      - name: Wait for AI Service to be healthy
+        run: |
+          echo "Waiting for http://localhost:8001/health ..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
+              echo "✓ AI Service healthy after ${i}x5s"
+              exit 0
+            fi
+            echo "  attempt $i/30..."
+            sleep 5
+          done
+          echo "✗ AI Service did not become healthy in time"
+          docker compose logs ai-service
+          exit 1
+
+      # ── 5. Run the 462-request experiment ─────────────────────────────────
+      - name: Run attack simulator
+        run: |
+          python attack-simulator/simulator.py \
+            --gateway-url "$GATEWAY_URL" \
+            --direct-url  "$DIRECT_AI_URL" \
+            --apim-key    "$APIM_KEY" \
+            --concurrency 10
+
+      # ── 6. Generate charts & HTML report ──────────────────────────────────
+      - name: Generate HTML report
+        run: python analysis/visualize.py
+
+      # ── 7. Upload report as workflow artifact ──────────────────────────────
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-experiment-report
+          path: analysis/results/
+          retention-days: 90
+
+      # ── 8. Commit results back to repo ────────────────────────────────────
+      - name: Commit experiment results
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add analysis/results/
+          # Only commit if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "ci: experiment results $(date -u '+%Y-%m-%d %H:%M UTC') [skip ci]"
+            git push
+          fi
+
+      # ── 9. Cleanup ─────────────────────────────────────────────────────────
+      - name: Stop containers
+        if: always()
+        run: docker compose down

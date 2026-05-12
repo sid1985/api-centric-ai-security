@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Local environment / secrets
+.azure-env.json
+*.env
+.env.*
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Experiment artifacts — keep analysis/results/ (research data for paper)
+# but ignore large intermediate files
+attack-simulator/raw_*.json
+attack-simulator/__pycache__/
+
+# Logs
+*.log
+ai-service/data/
