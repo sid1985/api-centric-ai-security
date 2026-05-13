@@ -29,3 +29,10 @@ attack-simulator/__pycache__/
 # Logs
 *.log
 ai-service/data/
+
+# Presentation files — kept locally, not tracked in repo
+docs/presentation_figures/
+docs/*.pptx
+docs/*.docx
+docs/extracted.txt
+docs/~$*
